@@ -685,10 +685,18 @@
         document.getElementById('btn').innerText = "继续探索";
     }
 
-    function showDestination(position, name, address, density) {
+function showDestination(position, name, address, density) {
         if (currentMarker) map.remove(currentMarker);
         currentTargetData = { position, name, address };
         
+        // 1. 先准备好数据 (vibe 和 detail)，方便后面点击事件使用
+        let vibe = "";
+        if (density > 15) vibe = "🔥 热闹市区";
+        else if (density > 5) vibe = "🏘️ 宁静街区";
+        else vibe = "🌲 隐秘角落";
+        let detail = address && address.length > 0 ? address : "附近无详细门牌";
+
+        // 2. 创建 Marker
         currentMarker = new AMap.Marker({
             position: position,
             content: '<div class="custom-marker"></div>', 
@@ -697,6 +705,32 @@
         });
         map.add(currentMarker);
 
+        // 3. ✅【核心修改】绑定点击事件
+        currentMarker.on('click', () => {
+            if (window.innerWidth < 600) {
+                showMobilePanel({ name, address: detail, vibe, isLit: false });
+            } else {
+                var infoWindow = new AMap.InfoWindow({
+                    content: `
+                        <div style="padding:5px; min-width:200px">
+                            <b style="font-size:16px">${name}</b><br>
+                            <span style="font-size:12px;color:#999; margin-bottom:5px; display:block">${vibe}</span>
+                            <span style="font-size:13px;color:#333">${detail}</span>
+                            <div class="bubble-btn-group">
+                                <button class="bubble-btn btn-checkin" onclick="handleCheckin()">📍 点亮这里</button>
+                                <button class="bubble-btn btn-nav" onclick="openNavSheet()">🚀 导航前往</button>
+                            </div>
+                        </div>`,
+                    offset: new AMap.Pixel(3, -20),
+                    anchor: 'bottom-center',
+                    autoMove: true, 
+                    closeWhenClickMap: true 
+                });
+                infoWindow.open(map, position);
+            }
+        });
+
+        // 4. 处理小地图 (保持不变)
         var miniMapDiv = document.getElementById('mini-map');
         miniMapDiv.style.visibility = 'visible'; miniMapDiv.style.opacity = '1';
         if (miniMarker) miniMap.remove(miniMarker);
@@ -705,13 +739,8 @@
         });
         miniMap.add(miniMarker);
         if (miniPolygons.length > 0) miniMap.setFitView(miniPolygons, false, [10, 10, 10, 10]);
-
-        let vibe = "";
-        if (density > 15) vibe = "🔥 热闹市区";
-        else if (density > 5) vibe = "🏘️ 宁静街区";
-        else vibe = "🌲 隐秘角落";
-        let detail = address && address.length > 0 ? address : "附近无详细门牌";
         
+        // 5. 开始飞行动画 (保持不变)
         let flyAltitude = 11.5; 
         
         animateView({ zoom: flyAltitude, pitch: 0 }, 800, function() {
@@ -719,10 +748,12 @@
             setTimeout(() => {
                 animateView({ zoom: 17, pitch: 0 }, 1000, function() {
                     
+                    // 动画结束后自动显示一次信息
                     if (window.innerWidth < 600) {
                         showMobilePanel({ name, address: detail, vibe, isLit: false });
                         map.panBy(0, -50); 
                     } else {
+                        // 电脑端自动打开 InfoWindow (这里代码其实和点击事件里重复了，但为了逻辑清晰可以保留)
                         var infoWindow = new AMap.InfoWindow({
                             content: `
                                 <div style="padding:5px; min-width:200px">
@@ -749,7 +780,7 @@
                 });
             }, 800); 
         });
-    }    
+    }
 
     function animateView(target, duration, callback) {
         let startZoom = map.getZoom(); let startPitch = map.getPitch(); let startTime = performance.now();
