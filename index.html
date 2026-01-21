@@ -288,8 +288,10 @@
 <script>
     // --- 1. Bmob 初始化 (云端数据库) ---
     // 密钥来自你的配置，安全码设为 123456
-    Bmob.initialize("4479267291201ee6", "123456");
-
+    // ✅ 修正后的代码 (匹配你下载的 bmob.js SDK)
+    // 参数1: Application ID, 参数2: REST API Key
+    Bmob.initialize("d6275d7ddd465cce97b36cf210107910", "5ef90a1f433f330c22c2bd7465ca5cfe");
+    
     // --- 2. 同步码逻辑 ---
     let userSyncCode = localStorage.getItem('sz_sync_code') || 'guest_' + Math.random().toString(36).substr(2, 6);
     localStorage.setItem('sz_sync_code', userSyncCode);
