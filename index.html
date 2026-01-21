@@ -131,11 +131,31 @@
 
         #col-list { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
         
+        /* --- 修改：列表项布局调整 (支持缩略图) --- */
         .col-item {
             background: #f9f9f9; border-radius: 10px; padding: 12px; margin-bottom: 12px;
-            border-left: 4px solid #FFD700; display: flex; justify-content: space-between; align-items: center;
+            border-left: 4px solid #FFD700; 
+            display: flex; align-items: center; gap: 12px; /* 增加间距 */
         }
-        .col-info { flex: 1; margin-right: 10px; overflow: hidden; }
+
+        /* --- 新增：缩略图区域样式 --- */
+        .col-thumb {
+            width: 60px; height: 60px;
+            flex-shrink: 0; /* 防止图片被压缩 */
+            background-color: #e0e0e0;
+            border-radius: 8px;
+            display: flex; justify-content: center; align-items: center; flex-direction: column;
+            overflow: hidden; cursor: pointer; position: relative;
+            border: 1px dashed #ccc; transition: all 0.2s;
+        }
+        .col-thumb:active { transform: scale(0.95); opacity: 0.8; }
+        .col-thumb img { width: 100%; height: 100%; object-fit: cover; }
+        .col-thumb .add-icon { font-size: 20px; color: #999; line-height: 1; margin-bottom: 2px;}
+        .col-thumb .add-text { font-size: 9px; color: #999; }
+
+        /* 调整信息栏，去掉原来的 margin-right */
+        .col-info { flex: 1; overflow: hidden; }
+
         .col-info h4 { margin: 0 0 5px 0; font-size: 15px; color: #333; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .col-info p { margin: 0; font-size: 12px; color: #666; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .col-info .date { font-size: 10px; color: #999; margin-top: 5px; display: block;}
@@ -340,7 +360,8 @@
                     name: item.name,
                     address: item.address,
                     position: item.position,
-                    time: item.time
+                    time: item.time,
+                    imgUrl: item.imgUrl || '' // ✅ 新增这一行
                 };
             });
             
@@ -447,13 +468,24 @@
             container.innerHTML = '<p style="text-align:center; color:#999; margin-top:30px; font-size:13px;">还没点亮任何地方<br>快去探索吧！</p>';
             return;
         }
-        // 按时间排序已经在 fetch 时做了，这里只需渲染
+        
         let html = '';
         list.forEach(item => {
             const dateStr = new Date(item.time).toLocaleString();
             const itemStr = encodeURIComponent(JSON.stringify(item));
+            
+            // 判断有没有图，生成不同的 HTML
+            const thumbHtml = item.imgUrl 
+                ? `<img src="${item.imgUrl}" onerror="this.src='https://via.placeholder.com/60?text=Error'">` 
+                : `<div class="add-icon">+</div><div class="add-text">照片</div>`;
+
             html += `
                 <div class="col-item">
+                    <div class="col-thumb" onclick="triggerFileSelect('${item.objectId}')">
+                        ${thumbHtml}
+                    </div>
+                    <input type="file" id="file-${item.objectId}" style="display:none" accept="image/*" onchange="uploadPhoto(this, '${item.objectId}')">
+                    
                     <div class="col-info">
                         <h4>${item.name}</h4>
                         <p>${item.address}</p>
@@ -468,6 +500,7 @@
         });
         container.innerHTML = html;
     }
+
     function toggleCollection() { document.getElementById('collection-panel').classList.toggle('open'); }
     function flyToHistory(position) {
         map.setZoomAndCenter(17, position);
@@ -794,7 +827,58 @@ function showDestination(position, name, address, density) {
             if (progress < 1) requestAnimationFrame(step); else if (callback) callback();
         }
         requestAnimationFrame(step);
-    }  
+    } 
+
+    // --- 新增功能：上传照片 ---
+    
+    // 1. 触发文件选择
+    window.triggerFileSelect = function(id) {
+        // 防止刚点亮还没同步完 ID 的情况
+        if (!id || id === 'undefined') {
+            alert("正在同步云端数据，请稍等 2 秒后再试...");
+            return;
+        }
+        document.getElementById('file-' + id).click();
+    }
+
+    // 2. 处理文件上传
+    window.uploadPhoto = function(input, objectId) {
+        if (input.files && input.files[0]) {
+            const file = input.files[0];
+            
+            // 简单的加载提示
+            const statusDiv = document.getElementById('sync-status');
+            const originalText = statusDiv.innerText;
+            statusDiv.innerText = "正在上传图片 0% ...";
+            
+            // Bmob 文件上传
+            const bmobFile = Bmob.File(file.name, file);
+            bmobFile.save().then(res => {
+                statusDiv.innerText = "图片处理中...";
+                const url = res[0].url; // 获取图片地址
+                
+                // 更新数据库中的记录
+                const query = Bmob.Query("CheckInRecord");
+                query.get(objectId).then(obj => {
+                    obj.set('imgUrl', url); // 写入 imgUrl 字段
+                    obj.save().then(() => {
+                        // 更新本地缓存并刷新界面
+                        const item = cachedList.find(i => i.objectId === objectId);
+                        if(item) item.imgUrl = url;
+                        renderCollectionList();
+                        
+                        statusDiv.innerText = originalText;
+                        alert("📸 照片上传成功！");
+                    });
+                });
+            }).catch(err => {
+                console.error(err);
+                alert("上传失败: " + JSON.stringify(err));
+                statusDiv.innerText = "上传出错";
+            });
+        }
+    }
+
 </script>
 </body>
 </html>
