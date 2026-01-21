@@ -841,44 +841,89 @@ function showDestination(position, name, address, density) {
         document.getElementById('file-' + id).click();
     }
 
-    // 2. 处理文件上传
+    // 2. 处理文件上传 (增强版)
     window.uploadPhoto = function(input, objectId) {
         if (input.files && input.files[0]) {
             const file = input.files[0];
             
-            // 简单的加载提示
+            // --- 改进1: 检查文件大小 (限制 5MB) ---
+            const maxSize = 5 * 1024 * 1024; // 5MB
+            if (file.size > maxSize) {
+                alert("图片太大了 (超过5MB)！请选一张小一点的照片，或者截图后再上传。");
+                input.value = ''; // 清空选择
+                return;
+            }
+
             const statusDiv = document.getElementById('sync-status');
             const originalText = statusDiv.innerText;
-            statusDiv.innerText = "正在上传图片 0% ...";
+            statusDiv.innerText = "正在上传图片...";
             
+            // --- 改进2: 重命名文件 (防止中文乱码报错) ---
+            // 获取后缀名 (如 .jpg)
+            const ext = file.name.substring(file.name.lastIndexOf('.'));
+            // 生成纯数字文件名 (如 17389283.jpg)
+            const safeName = Date.now() + (ext || '.jpg');
+
             // Bmob 文件上传
-            const bmobFile = Bmob.File(file.name, file);
-            bmobFile.save().then(res => {
-                statusDiv.innerText = "图片处理中...";
-                const url = res[0].url; // 获取图片地址
+            // 注意：这里加了 try-catch 以防 Bmob.File 本身报错
+            try {
+                const bmobFile = Bmob.File(safeName, file);
                 
-                // 更新数据库中的记录
-                const query = Bmob.Query("CheckInRecord");
-                query.get(objectId).then(obj => {
-                    obj.set('imgUrl', url); // 写入 imgUrl 字段
-                    obj.save().then(() => {
-                        // 更新本地缓存并刷新界面
-                        const item = cachedList.find(i => i.objectId === objectId);
-                        if(item) item.imgUrl = url;
-                        renderCollectionList();
-                        
+                bmobFile.save().then(res => {
+                    statusDiv.innerText = "图片处理中...";
+                    
+                    // 兼容处理：有些版本返回数组，有些返回对象
+                    let url = "";
+                    if (Array.isArray(res)) {
+                        url = res[0].url;
+                    } else if (res && res.url) {
+                        url = res.url;
+                    } else if (res && typeof res === 'string') {
+                         // 极少数情况直接返回 URL
+                         url = JSON.parse(res).url;
+                    }
+
+                    if (!url) {
+                        throw new Error("未获取到图片链接");
+                    }
+                    
+                    // 更新数据库中的记录
+                    const query = Bmob.Query("CheckInRecord");
+                    query.get(objectId).then(obj => {
+                        obj.set('imgUrl', url);
+                        obj.save().then(() => {
+                            // 更新本地缓存并刷新界面
+                            const item = cachedList.find(i => i.objectId === objectId);
+                            if(item) item.imgUrl = url;
+                            renderCollectionList();
+                            
+                            statusDiv.innerText = originalText;
+                            alert("📸 照片上传成功！");
+                        });
+                    }).catch(err => {
+                        console.error("保存记录失败", err);
+                        alert("图片传好了，但保存记录失败: " + (err.message || JSON.stringify(err)));
                         statusDiv.innerText = originalText;
-                        alert("📸 照片上传成功！");
                     });
+                }).catch(err => {
+                    // --- 改进3: 显示真实错误 ---
+                    console.error("上传文件失败", err);
+                    // 尝试提取错误信息
+                    let errMsg = "未知错误";
+                    if (err && err.error) errMsg = err.error;
+                    else if (err && err.message) errMsg = err.message;
+                    else errMsg = JSON.stringify(err);
+                    
+                    alert("上传失败: " + errMsg);
+                    statusDiv.innerText = "上传出错";
                 });
-            }).catch(err => {
-                console.error(err);
-                alert("上传失败: " + JSON.stringify(err));
-                statusDiv.innerText = "上传出错";
-            });
+            } catch (e) {
+                console.error(e);
+                alert("初始化上传失败: " + e.message);
+                statusDiv.innerText = originalText;
+            }
         }
     }
-
 </script>
 </body>
 </html>
